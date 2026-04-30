@@ -24,9 +24,13 @@
 
 ## 🛠️ Cara Penggunaan
 Setup pertama kali:
+1. Buat dulu folder kosong sebagai project.
+2. Jalankan command setup nya.
 ```bash
 crow init
 ```
+3. Jalankan AI Agent nya disana.
+4. Agar AI nya ngerti, kirim file SKILL.md ke AI nya.
 
 Perintah populer:
 - `crow list /` : Lihat isi server.
