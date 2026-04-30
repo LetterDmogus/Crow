@@ -1,0 +1,12 @@
+{
+  "turn_count": 29,
+  "last_session_id": "7cc8ebf1-ef91-49a1-910e-44f29e26bcee",
+  "last_event_key": "7cc8ebf1-ef91-49a1-910e-44f29e26bcee:transcript:896c1b4e5ec6b87950e4e3b6dd14cb146103143b1a34781c255a2920961fe61f",
+  "last_transcript_hash": "896c1b4e5ec6b87950e4e3b6dd14cb146103143b1a34781c255a2920961fe61f",
+  "last_model": "gemini-3-flash-preview",
+  "last_turn_total_tokens": 104159,
+  "last_session_total_tokens": 5752258,
+  "cwd_mode": "parent-leaf",
+  "last_cwd_label": "Python/Crow",
+  "updated_at": "2026-04-30T10:22:44.352Z"
+}

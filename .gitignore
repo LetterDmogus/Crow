@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Crow Specific
+.ftp-tool.json
+.crow_backups/
+.crow_map.cache
+FTP_TREE.md
+
+# OS
+.DS_Store
+Thumbs.db

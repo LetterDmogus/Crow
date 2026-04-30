@@ -1,0 +1,12 @@
+{
+  "last_session_id": "7cc8ebf1-ef91-49a1-910e-44f29e26bcee",
+  "last_event_key": "7cc8ebf1-ef91-49a1-910e-44f29e26bcee:transcript:896c1b4e5ec6b87950e4e3b6dd14cb146103143b1a34781c255a2920961fe61f",
+  "last_prompted_session_id": "7cc8ebf1-ef91-49a1-910e-44f29e26bcee",
+  "last_reason": "prompt-cooldown-active",
+  "last_prompted_at": "2026-04-30T09:39:31.698Z",
+  "last_user_message_count": 31,
+  "last_actionable_message_count": 0,
+  "deep_interview_lock_active": false,
+  "deep_interview_lock_source": "/home/floaty/Documents/Python/Crow/.omg/state/deep-interview.json",
+  "updated_at": "2026-04-30T10:22:44.306Z"
+}
