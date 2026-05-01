@@ -9,7 +9,7 @@
 Speedrun mengerjakan projek ini karena tugas sekolah mendadak menjadi cloud based coding, sebagai vibe coder, ini adalah mimpi buruk.
 Jadi saya menghabiskan beberapa jam untuk mengerjakan versi awalnya, dan kemudian membuat versi browser untuk mempercepat quick edit.
 
-## Fitur Unggulan (V1.7.0)
+## Fitur Unggulan (V1.4.0)
 ---
 - **Visual TUI Browser**: Jalankan `crow browse` untuk membuka FTP Browser di dalam terminal.
 - **Integrated Shell**: Akses command-line penuh langsung dari dalam TUI (`:`).

@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "crow"
 version = "1.4.0"
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "Letter Doormagedust", email = "letterdoormagedust@gmail.com"}
 ]
 description = "FTP harness for AI assistants (Claude Code, Gemini CLI, etc.)"
 readme = "README.md"
