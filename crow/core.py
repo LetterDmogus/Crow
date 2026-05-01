@@ -4,6 +4,7 @@ from pathlib import Path
 from crow.utils import die
 
 CONFIG_FILENAME = ".ftp-tool.json"
+SESSION_FILENAME = ".crow_sessions.json"
 
 def find_config() -> Path:
     current = Path.cwd()
@@ -26,6 +27,43 @@ def save_config(data: dict, path: Path = None):
         json.dump(data, f, indent=2)
     print(f"[crow] Config saved to {target}")
 
+# ─── Session Management ────────────────────────────────────────────────────────
+
+def load_sessions() -> dict:
+    path = Path.cwd() / SESSION_FILENAME
+    if not path.exists():
+        return {"default": "/"}
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except:
+        return {"default": "/"}
+
+def save_sessions(sessions: dict):
+    path = Path.cwd() / SESSION_FILENAME
+    with open(path, "w") as f:
+        json.dump(sessions, f, indent=2)
+
+def get_cwd(session_id: str = "default") -> str:
+    sessions = load_sessions()
+    return sessions.get(session_id, "/")
+
+def resolve_remote_path(path: str, session_id: str = "default") -> str:
+    """Combine session CWD with requested path."""
+    if not path:
+        path = "."
+        
+    if path.startswith("/"):
+        return path
+    
+    cwd = get_cwd(session_id).rstrip("/")
+    if path == ".":
+        return cwd if cwd else "/"
+        
+    return f"{cwd}/{path}"
+
+# ─── FTP Connection ─────────────────────────────────────────────────────────────
+
 def connect(cfg: dict) -> ftplib.FTP:
     ftp = ftplib.FTP()
     host = cfg["host"]
@@ -38,8 +76,6 @@ def connect(cfg: dict) -> ftplib.FTP:
     passive = cfg.get("passive", True)
     ftp.set_pasv(passive)
 
-    base_dir = cfg.get("base_dir", "/")
-    if base_dir and base_dir != "/":
-        ftp.cwd(base_dir)
-
+    # Note: We don't automatically CWD here anymore, 
+    # we handle it per command using resolve_remote_path
     return ftp

@@ -1,53 +1,58 @@
-# Crow 🐦‍⬛
+# Crow
 
-**Crow** adalah FTP Harness yang dirancang khusus untuk mempermudah asisten AI dalam mengelola file di server FTP secara aman.
+**Crow** adalah Smart FTP Agent & Browser yang dirancang khusus untuk mempermudah asisten AI dan developer dalam mengelola file di server FTP secara aman dan visual.
 
-## 🚀 Instalasi (Direkomendasikan)
-Cara terbaik untuk menginstal Crow adalah menggunakan [pipx](https://pypa.github.io/pipx/):
+<p align="center">
+  <img src="logo.png" width="200" alt="Crow Logo">
+</p>
+
+Speedrun mengerjakan projek ini karena tugas sekolah mendadak menjadi cloud based coding, sebagai vibe coder, ini adalah mimpi buruk.
+Jadi saya menghabiskan beberapa jam untuk mengerjakan versi awalnya, dan kemudian membuat versi browser untuk mempercepat quick edit.
+
+## Fitur Unggulan (V1.7.0)
+---
+- **Visual TUI Browser**: Jalankan `crow browse` untuk membuka FTP Browser di dalam terminal.
+- **Integrated Shell**: Akses command-line penuh langsung dari dalam TUI (`:`).
+- **Parallel Sessions**: Kelola banyak server/folder sekaligus dengan sistem ID (`--id`).
+- **Safeguard System**: Backup lokal otomatis & Validasi sintaks (Linter PHP/Python).
+- **Smart Search**: Cari nama file (instan) atau konten file (targeted).
+- **Manual Preview**: Intip isi file dengan tombol `Space` untuk efisiensi bandwidth.
+
+## Instalasi Cepat
+---
+Gunakan [pipx](https://pypa.github.io/pipx/) untuk isolasi otomatis:
 
 ```bash
 pipx install .
 ```
-*Jika kamu masih dalam tahap pengembangan dan ingin perubahan kode langsung aktif, gunakan:*
-```bash
-pipx install --editable .
-```
 
-Setelah diinstal, perintah `crow` akan tersedia secara global di terminal kamu tanpa perlu aktivasi virtual environment manual.
+## Cara Penggunaan
+---
+Untuk panduan lengkap langkah demi langkah, silakan baca:
+👉 **[GUIDE.md — Panduan Memulai Crow](./GUIDE.md)**
 
-## 💡 Tips Penggunaan (Sangat Disarankan)
-Agar file kamu tetap rapi, selalu **buat folder baru** untuk setiap projek FTP yang berbeda:
+Ringkasan perintah:
+1. **Setup**: `crow init` di dalam folder projekmu.
+2. **TUI Mode**: `crow browse` (Sangat disarankan).
+3. **Interactive Shell**: `crow shell`.
 
-```bash
-mkdir my-web-projek
-cd my-web-projek
-crow init
-```
-Dengan cara ini:
-- Konfigurasi `.ftp-tool.json` tidak akan tertukar antar projek.
-- Folder `.crow_backups/` hanya berisi cadangan untuk projek tersebut.
-- AI akan lebih fokus memetakan struktur folder yang spesifik.
+## Shortcut Keyboard (TUI Mode)
+---
+- **Panah**: Navigasi kursor.
+- **Enter / Panah Kanan**: Masuk folder.
+- **Backspace / Panah Kiri**: Keluar folder.
+- **Space**: Preview isi file.
+- **e**: Edit file (otomatis buka editor & upload kembali).
+- **s**: Switch Panel (pindah fokus ke sidebar Sesi).
+- **/**: Filter/Search nama file secara cepat.
+- **:**: Masuk ke mode Crow Shell.
+- **h**: Lompat ke folder root (`/`).
+- **q**: Keluar aplikasi.
 
-## 🛠️ Cara Penggunaan
-Setelah menjalankan `crow init` di folder projekmu:
-
-Perintah populer:
-- `crow list /` : Lihat isi server.
-- `crow map` : Buat peta struktur projek (`FTP_TREE.md`).
-- `crow read file.php` : Baca isi file secara utuh.
-- `crow tail error_log -n 20` : Intip 20 baris terakhir file besar.
-- `crow write file.php "content"` : Update file (aman dengan backup).
-- `crow edit file.php` : Edit langsung pakai editor favoritmu.
-
-## ✨ Fitur Unggulan
-- **Safeguard System**: Backup lokal otomatis & Validasi sintaks.
-- **Project Mapping**: Mapping struktur folder Laravel/Besar secara instan.
-- **Smart Tail**: Efisiensi membaca log besar via FTP.
-- **Bulk Ops**: `pull` & `push` untuk sinkronisasi folder.
-
-## 🛡️ Keamanan
-- Kredensial disimpan di `.ftp-tool.json` (Otomatis di-ignore oleh Git).
-- Backup tersimpan di folder `.crow_backups/`.
+## Keamanan
+---
+- Kredensial aman di `.ftp-tool.json` (Otomatis di-ignore oleh Git).
+- Backup otomatis tersimpan di folder lokal `.crow_backups/`.
 
 ---
-Dibuat dengan ❤️ untuk efisiensi koding bersama AI.
+Dibuat oleh Letter dengan menggunakan Gemini CLI + Oh-My-GeminiCLI

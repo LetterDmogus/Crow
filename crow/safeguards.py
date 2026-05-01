@@ -1,7 +1,9 @@
 import time
 import ftplib
+import subprocess
+import os
 from pathlib import Path
-from crow.utils import die
+from crow.utils import die, console
 
 def make_backup(ftp: ftplib.FTP, remote: str):
     """Download existing remote file to local .crow_backups/ before overwriting/deleting."""
@@ -15,12 +17,12 @@ def make_backup(ftp: ftplib.FTP, remote: str):
     try:
         with open(local_backup_path, "wb") as f:
             ftp.retrbinary(f"RETR {remote}", f.write)
-        print(f"[crow] Safeguard: existing file backed up locally to {local_backup_path}")
+        console.print(f"[dim][crow] Safeguard: existing file backed up locally to {local_backup_path}[/]")
     except ftplib.error_perm:
         if local_backup_path.exists():
             local_backup_path.unlink()
     except Exception as e:
-        print(f"[crow] Warning: Could not create local backup: {e}")
+        console.print(f"[warning][crow] Warning: Could not create local backup: {e}[/]")
 
 def backup_folder_local(local_path: str):
     """Create a zip backup of a local folder before it gets overwritten by pull."""
@@ -37,9 +39,9 @@ def backup_folder_local(local_path: str):
     
     try:
         shutil.make_archive(str(backup_name), 'zip', str(path))
-        print(f"[crow] Safeguard: Local folder backed up to {backup_name}.zip")
+        console.print(f"[success][crow] Safeguard: Local folder backed up to {backup_name}.zip[/]")
     except Exception as e:
-        print(f"[crow] Warning: Local folder backup failed: {e}")
+        console.print(f"[warning][crow] Warning: Local folder backup failed: {e}[/]")
 
 def validate_action(remote: str, content: str = None, force: bool = False):
     """Validate if the action is safe to perform."""
@@ -57,19 +59,28 @@ def validate_action(remote: str, content: str = None, force: bool = False):
         if not content.strip():
             die("Aborting: Content is empty or only whitespace. Use --force if intended.")
 
-        # 3. Basic Syntax Checks
+        # 3. Shell Escaping Warning (if content passed as arg, not via STDIN)
+        # Detecting unescaped $ or ` in a suspicious way
+        if "$" in content and "\\" + "$" not in content and "content" not in content:
+            console.print("[warning][crow] WARNING: Detected '$' symbol without escaping. If this was passed as a shell argument, it might be broken. Prefer using STDIN (piping) for safety.[/]")
+
+        # 4. Syntax & Linting
         ext = Path(remote).suffix.lower()
+        
+        # PHP Linting (if php is installed)
+        if ext == ".php":
+            # Temporary file for linting
+            with subprocess.Popen(['php', '-l'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as proc:
+                stdout, stderr = proc.communicate(input=content.encode())
+                if proc.returncode != 0:
+                    die(f"PHP Syntax Error detected via 'php -l':\n{stderr.decode().strip()}\nUpload aborted to prevent server crash.")
+        
+        # Python syntax check
         if ext == ".py":
             import ast
             try:
                 ast.parse(content)
             except SyntaxError as e:
                 die(f"Python Syntax Error detected: {e}. Upload aborted.")
-        
-        if ext in [".php", ".html"]:
-            if ext == ".php" and "<?php" not in content and "<?=" not in content:
-                die("Warning: PHP file missing '<?php' tag. Upload aborted.")
-            if "<" not in content or ">" not in content:
-                die("Warning: Suspiciously simple HTML/PHP content. Upload aborted.")
 
     return True

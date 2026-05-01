@@ -1,12 +1,12 @@
 {
-  "turn_count": 32,
+  "turn_count": 81,
   "last_session_id": "7cc8ebf1-ef91-49a1-910e-44f29e26bcee",
-  "last_event_key": "7cc8ebf1-ef91-49a1-910e-44f29e26bcee:transcript:6d081129334813997d410ecf255af68c015a461e648f8ff7011cf07b2537ecb6",
-  "last_transcript_hash": "6d081129334813997d410ecf255af68c015a461e648f8ff7011cf07b2537ecb6",
+  "last_event_key": "7cc8ebf1-ef91-49a1-910e-44f29e26bcee:transcript:c61078cb4638a61d2cd94c649557654746b69d979aa8f1c92f55c4c10dad58ce",
+  "last_transcript_hash": "c61078cb4638a61d2cd94c649557654746b69d979aa8f1c92f55c4c10dad58ce",
   "last_model": "gemini-3-flash-preview",
-  "last_turn_total_tokens": 103090,
-  "last_session_total_tokens": 6684037,
+  "last_turn_total_tokens": 310727,
+  "last_session_total_tokens": 30473228,
   "cwd_mode": "parent-leaf",
   "last_cwd_label": "Python/Crow",
-  "updated_at": "2026-04-30T10:35:44.808Z"
+  "updated_at": "2026-05-01T09:25:10.046Z"
 }
