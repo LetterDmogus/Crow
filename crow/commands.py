@@ -214,7 +214,7 @@ def cmd_shell(args):
     from crow.shell import CrowShell; shell = CrowShell(); shell.cmdloop()
 
 def cmd_browse(args):
-    from crow.tui.app import CrowBrowser; app = CrowBrowser(); app.run()
+    from crow.tui.app import Crowmander; app = Crowmander(); app.run()
 
 def cmd_map(args):
     cfg = load_config(); cache_filename = ".crow_map.cache"; tree_file = "FTP_TREE.md"

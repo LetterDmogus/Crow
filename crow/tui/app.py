@@ -3,238 +3,396 @@ import threading
 import subprocess
 import tempfile
 import asyncio
+import json
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, Static, DataTable, Log, Input
-from textual.containers import Container, Horizontal, Vertical
-from textual import work, on
+from textual.widgets import Header, Footer, Static, DataTable, Log, Input, Tabs, Tab, OptionList, ContentSwitcher
+from textual.screen import ModalScreen
+from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
+from textual import work, on, events
 from rich.text import Text
 from rich.syntax import Syntax
 
-from crow.core import connect, load_config, get_cwd, load_sessions, save_sessions
+from crow.core import connect, load_config, get_cwd, load_sessions
 from crow import commands
-from crow.commands import parse_ftp_line
+from crow.tui.widgets.file_panel import FilePanel
+from crow.tui.utils import get_icon, get_cached_entries, set_cached_entries
 
-def get_icon(name: str, is_dir: bool) -> str:
-    """Return a fixed-width icon for layout stability."""
-    if is_dir: return "dir "
-    ext = os.path.splitext(name)[1].lower()
-    if name == ".env": return "env "
-    if name == ".htaccess": return "cfg "
-    icons = {
-        ".php": "php ", ".py": "py  ", ".md": "md  ", ".json": "json",
-        ".sql": "sql ", ".js": "js  ", ".css": "css ", ".html": "html",
-        ".jpg": "img ", ".png": "img ", ".zip": "zip ",
-    }
-    return icons.get(ext, "file")
+class EditorSelectionScreen(ModalScreen[str]):
+    """Modal screen for selecting a text editor."""
+    def compose(self) -> ComposeResult:
+        with Vertical(id="editor-menu"):
+            yield Static("OPEN WITH...", classes="section-title")
+            yield OptionList(
+                "Default (ENV)",
+                "nano",
+                "vim",
+                "vi",
+                "emacs",
+                "code --wait",
+                "subl -w",
+                "micro",
+                "notepad",
+                id="editor-list"
+            )
 
-class Sidebar(Vertical):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.can_focus = True
+    @on(OptionList.OptionSelected)
+    def on_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(str(event.option.prompt))
 
-class CrowBrowser(App):
-    """Crow TUI V1.7.0 - Integrated Shell and Pro Navigation."""
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "escape":
+            self.dismiss(None)
+
+class Crowmander(App):
+    """Crow TUI V1.8.3 - Dual Panel FTP Client."""
     
     CSS = """
     Screen { background: transparent; }
-    Sidebar { width: 20%; border-right: solid $primary; }
-    Sidebar:focus { background: $boost; border-right: double $accent; }
-    #content { width: 55%; }
-    #right-panel { width: 25%; border-left: solid $primary; }
-    #preview-area { height: 65%; border-bottom: solid $primary; }
-    #log-area { height: 35%; }
-    .title {
-        text-align: center; width: 100%; color: $accent; text-style: bold;
-        border-bottom: solid $primary; margin-bottom: 0; padding: 0 1;
+    
+    #header-container {
+        layout: horizontal;
+        background: $primary;
+        color: white;
+        height: 1;
     }
-    #search-bar { display: none; margin: 0 1; border: tall $accent; }
-    #search-bar.-visible { display: block; }
+    #header-title { width: 1fr; text-style: bold; padding: 0 1; color: $accent; }
+    #header-clock { width: 25; text-align: right; padding: 0 1; color: $secondary; }
+
+    #middle-container { height: 60%; }
+    FilePanel { width: 50%; border: solid $primary; }
+    FilePanel:focus-within { border: double $accent; background: $boost; }
+    
+    Tabs { height: 3; background: $boost; border-bottom: solid $primary; }
+    
+    .panel-title {
+        text-align: center; width: 100%; color: $accent; text-style: bold;
+        background: $primary; margin-bottom: 0; padding: 0;
+    }
+    .search-bar { display: none; margin: 0; border: none; height: 3; }
+    .search-bar.-visible { display: block; }
+    
+    #bottom-container { height: 40%; border-top: solid $primary; }
+    #log-panel { width: 50%; border-right: solid $primary; }
+    #preview-panel { width: 50%; }
+    .section-title {
+        text-align: center; color: $secondary; text-style: italic;
+        border-bottom: solid $primary;
+    }
     DataTable { background: transparent; border: none; height: 1fr; }
-    DataTable:focus { border-left: double $accent; }
     Log { background: transparent; color: $text-muted; }
-    #preview-box { padding: 0; margin: 0; height: 100%; overflow: hidden; }
+    #preview-box { padding: 0 1; }
+
+    #editor-menu {
+        width: 40;
+        height: 15;
+        border: thick $accent;
+        background: $boost;
+        padding: 1;
+        align: center middle;
+    }
+    #editor-menu .section-title { margin-bottom: 1; }
+
+    #command-bar {
+        display: none;
+        background: $accent;
+        color: $text;
+        dock: bottom;
+        height: 3;
+        border: none;
+    }
+    #command-bar.-visible { display: block; }
     """
 
     BINDINGS = [
         ("q", "quit", "Quit"),
-        ("r", "refresh", "Refresh"),
-        ("h", "go_home", "Home"),
-        ("/", "toggle_search", "Search"),
-        ("e", "edit_file", "Edit"),
-        ("s", "toggle_panel", "Switch Panel"),
-        (":", "open_shell", "Shell"), # NEW: Open Shell
+        ("tab", "switch_panel", "Switch Panel"),
+        ("r", "refresh_active", "Refresh"),
         ("space", "show_preview", "Preview"),
+        ("o", "open_file", "Open"),
+        ("d", "download_file", "Download (Get)"),
+        ("u", "upload_file", "Upload (Put)"),
+        ("e", "edit_file", "Edit"),
+        (":", "toggle_command_bar", "Command"),
+        ("/", "toggle_search", "Search"),
+        ("n", "parent_dir", "Back"),
+        ("m", "enter_item", "Forward"),
+        ("ctrl+n", "prompt_mkdir", "Mkdir"),
+        ("f2", "prompt_rename", "Rename"),
+        ("delete,ctrl+x", "confirm_delete", "Delete"),
         ("backspace", "parent_dir", "Back"),
-        ("left", "parent_dir", "Back"),
-        ("right", "enter_item", "Forward"),
+        ("h", "go_home", "Home"),
+        ("escape", "close_all", "Close"),
     ]
 
     def __init__(self):
         super().__init__()
-        self.current_id = "default"
-        self.selected_id = "default"
-        self.current_path = get_cwd(self.current_id)
-        self.all_items = []
+        self.sessions = load_sessions()
         self._main_thread = threading.get_ident()
+        self.last_focused_panel_id = "left"
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
-        with Container(id="main-container"):
-            with Horizontal():
-                with Sidebar(id="sidebar"):
-                    yield Static("SESSIONS", classes="title")
-                    yield Static("", id="session-info")
-                with Vertical(id="content"):
-                    yield Static("REMOTE FILES", classes="title")
-                    yield Input(placeholder="Search files...", id="search-bar")
-                    table = DataTable(id="file-table")
-                    table.add_columns("Name", "Size", "Modified")
-                    table.cursor_type = "row"
-                    yield table
-                with Vertical(id="right-panel"):
-                    with Vertical(id="preview-area"):
-                        yield Static("PREVIEW", classes="title")
-                        yield Static("Select a file and press Space...", id="preview-box")
-                    with Vertical(id="log-area"):
-                        yield Static("ACTIVITY LOG", classes="title")
-                        yield Log(id="cmd-log")
+        with Horizontal(id="header-container"):
+            yield Static("CROWMANDER FTP MANAGER", id="header-title")
+            yield Static("", id="header-clock")
+        
+        session_list = list(self.sessions.keys())
+        left_sid = session_list[0] if len(session_list) > 0 else "default"
+        right_sid = session_list[1] if len(session_list) > 1 else left_sid
+        
+        with Horizontal(id="middle-container"):
+            yield FilePanel(panel_id="left", session_id=left_sid, id="left")
+            yield FilePanel(panel_id="right", session_id=right_sid, id="right")
+        
+        with Horizontal(id="bottom-container"):
+            with Vertical(id="log-panel"):
+                yield Static("ACTIVITY LOG", classes="section-title")
+                yield Log(id="cmd-log")
+            with Vertical(id="preview-panel"):
+                yield Static("PREVIEW", classes="section-title")
+                yield Static("Press Space to preview...", id="preview-box")
+        
+        yield Input(placeholder="Command: mkdir <name> | rename <name> | del | put <path> | get | shell", id="command-bar")
         yield Footer()
 
     def on_mount(self) -> None:
-        self.update_session_info()
-        self.log_message("Crow TUI V1.7 started.")
-        self.query_one(DataTable).focus()
-        self.action_refresh()
+        self.log_message("Crowmander Started.")
+        self.set_interval(1, self.update_clock)
+        for p_id in ["left", "right"]:
+            self.refresh_panel(p_id)
+        self.query_one("#table-left").focus()
+
+    def update_clock(self) -> None:
+        from datetime import datetime
+        try:
+            self.query_one("#header-clock", Static).update(f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        except: pass
 
     def log_message(self, msg: str):
         try: self.query_one("#cmd-log", Log).write_line(f"> {msg}")
         except: pass
 
-    def update_session_info(self):
-        sessions = load_sessions()
-        info_text = "\n"
-        for sid in sessions:
-            marker = ""
-            if sid == self.current_id: marker += "▶"
-            if sid == self.selected_id: marker += " ❯"
-            style = "bold cyan" if sid == self.selected_id else "white"
-            info_text += f"  {marker:3} [{style}]{sid}[/]\n"
-        self.query_one("#session-info", Static).update(info_text)
+    def on_focus(self, event: events.Focus) -> None:
+        node = event.control
+        while node:
+            if isinstance(node, FilePanel):
+                self.last_focused_panel_id = node.panel_id
+                break
+            node = node.parent
 
-    def safe_update(self, func, *args, **kwargs):
-        if threading.get_ident() == self._main_thread: func(*args, **kwargs)
-        else: self.call_from_thread(func, *args, **kwargs)
+    @on(Tabs.TabActivated)
+    def handle_tab_activated(self, event: Tabs.TabActivated):
+        tab_bar_id = event.tabs.id
+        panel_id = "left" if tab_bar_id == "tabs-left" else "right"
+        new_sid = event.tab.label.plain
+        panel = self.query_one(f"#{panel_id}", FilePanel)
+        if panel.session_id != new_sid:
+            panel.set_session(new_sid, get_cwd(new_sid))
+            self.refresh_panel(panel_id)
 
-    @work(exclusive=True, thread=True)
-    def action_refresh(self):
-        self.log_message(f"Entering: {self.current_path}")
-        table = self.query_one(DataTable)
-        self.safe_update(table.clear)
-        self.all_items = []
-        try:
-            cfg = load_config(); ftp = connect(cfg)
-            entries = []; ftp.retrlines(f"LIST {self.current_path}", entries.append); ftp.quit()
-            for line in entries:
-                item = parse_ftp_line(line)
-                if not item or not item["name"] or item["name"].strip() in (".", ".."): continue
-                self.all_items.append(item)
-                icon = get_icon(item["name"], item["is_dir"])
-                display_name = Text(f"{icon} {item['name']}")
-                if item["is_dir"]: display_name.stylize("bold green")
-                self.safe_update(table.add_row, display_name, item["size"], item["modified"], key=f"{item['name']}|{item['is_dir']}")
-            self.log_message(f"Loaded {len(self.all_items)} items.")
-        except Exception as e: self.log_message(f"ERROR: {e}")
+    def get_active_panel(self) -> FilePanel:
+        node = self.focused
+        while node:
+            if isinstance(node, FilePanel):
+                self.last_focused_panel_id = node.panel_id
+                return node
+            node = node.parent
+        return self.query_one(f"#{self.last_focused_panel_id}", FilePanel)
 
-    def action_show_preview(self):
-        table = self.query_one(DataTable)
-        if table.cursor_row is not None:
-            try:
-                row_keys = list(table.rows.keys())
-                if table.cursor_row < len(row_keys):
-                    self.update_preview(row_keys[table.cursor_row].value)
-            except: pass
+    def action_switch_panel(self):
+        target = "right" if self.last_focused_panel_id == "left" else "left"
+        self.query_one(f"#{target} DataTable").focus()
 
     @work(exclusive=True, thread=True)
-    def update_preview(self, row_key_value: str):
-        if not row_key_value: return
-        name, is_dir = row_key_value.split("|")
-        preview_box = self.query_one("#preview-box", Static)
-        if is_dir == "True":
-            self.safe_update(preview_box.update, f"\n  [dim]Directory:[/] [green]{name}/[/]"); return
-        try:
-            self.safe_update(preview_box.update, f"\n  [dim]Loading preview...[/]")
-            cfg = load_config(); ftp = connect(cfg)
-            full_path = f"{self.current_path.rstrip('/')}/{name}"
-            lines = []
-            def callback(l):
-                if len(lines) < 15: lines.append(l)
-            ftp.retrlines(f"RETR {full_path}", callback); ftp.quit()
-            content = "\n".join(lines); ext = os.path.splitext(name)[1].strip(".") or "txt"
-            syntax = Syntax(content, ext, theme="monokai", line_numbers=True)
-            self.safe_update(preview_box.update, syntax)
-            self.log_message(f"Preview loaded: {name}")
-        except Exception as e: self.safe_update(preview_box.update, f"\n  [red]Preview Error:[/] {e}")
-
-    def action_toggle_panel(self):
-        table = self.query_one(DataTable); sidebar = self.query_one("#sidebar")
-        if self.focused and self.focused.id == "sidebar":
-            table.focus(); self.log_message("Focus: File Manager")
-        else:
-            sidebar.focus(); self.log_message("Focus: Sessions")
-
-    def action_open_shell(self):
-        """Suspend TUI and launch the interactive Crow Shell."""
-        self.log_message("Launching Crow Shell...")
-        with self.suspend():
-            # Create a dummy args object and call the existing shell command
-            commands.cmd_shell(SimpleNamespace(id=self.current_id))
+    def refresh_panel(self, panel_id: str, force_refresh: bool = False):
+        panel = self.query_one(f"#{panel_id}", FilePanel)
+        if not force_refresh:
+            entries, last_refreshed = get_cached_entries(panel.session_id, panel.current_path)
+            if entries is not None:
+                self.log_message(f"[{panel.session_id}] Loaded {panel_id} from cache (Refreshed: {last_refreshed})")
+                self.call_from_thread(panel.update_list, entries, last_refreshed)
+                return
         
-        # When shell exits, resume and refresh
-        self.log_message("Resumed from Shell.")
-        self.update_session_info()
-        self.action_refresh()
+        self.log_message(f"[{panel.session_id}] Fetching {panel_id} from FTP...")
+        try:
+            cfg = load_config(); ftp = connect(cfg)
+            entries = []
+            ftp.retrlines(f"LIST {panel.current_path}", entries.append)
+            ftp.quit()
+            last_refreshed = set_cached_entries(panel.session_id, panel.current_path, entries)
+            self.call_from_thread(panel.update_list, entries, last_refreshed)
+        except Exception as e: self.log_message(f"Error {panel_id}: {e}")
 
-    def action_edit_file(self):
-        table = self.query_one(DataTable)
+    def action_toggle_command_bar(self):
+        cb = self.query_one("#command-bar", Input)
+        if cb.has_class("-visible"):
+            cb.remove_class("-visible")
+            self.get_active_panel().query_one(DataTable).focus()
+        else:
+            cb.add_class("-visible")
+            cb.focus()
+
+    @on(Input.Submitted, "#command-bar")
+    def handle_command_submit(self, event: Input.Submitted):
+        cmd_text = event.value.strip()
+        cb = self.query_one("#command-bar", Input)
+        cb.remove_class("-visible")
+        cb.value = ""
+        self.get_active_panel().query_one(DataTable).focus()
+        if not cmd_text: return
+        parts = cmd_text.split()
+        cmd = parts[0].lower()
+        args = parts[1:]
+        if cmd == "mkdir" and args: self.run_mkdir_task(args[0])
+        elif cmd == "rename" and args: self.run_rename_task(args[1] if len(args)>1 else args[0])
+        elif cmd in ("del", "delete"): self.action_confirm_delete()
+        elif cmd == "put" and args: self.run_upload_task(args[0])
+        elif cmd in ("get", "download"): self.action_download_file()
+        elif cmd == "shell": self.action_open_shell()
+        else: self.log_message(f"Unknown command: {cmd}")
+
+    def action_close_all(self):
+        active = self.get_active_panel()
+        if active.viewing_file: active.show_table()
+        cb = self.query_one("#command-bar", Input)
+        if cb.has_class("-visible"):
+            cb.remove_class("-visible")
+            active.query_one(DataTable).focus()
+
+    def action_prompt_mkdir(self):
+        cb = self.query_one("#command-bar", Input)
+        cb.add_class("-visible"); cb.value = "mkdir "; cb.focus()
+
+    def action_prompt_rename(self):
+        active = self.get_active_panel()
+        table = active.query_one(DataTable)
         if table.cursor_row is None: return
         row_keys = list(table.rows.keys())
-        if table.cursor_row >= len(row_keys): return
-        row_key_value = row_keys[table.cursor_row].value
-        name, is_dir = row_key_value.split("|")
-        if is_dir == "True": return
-        full_path = f"{self.current_path.rstrip('/')}/{name}"
-        suffix = os.path.splitext(name)[1] or ".txt"
-        self.run_edit_orchestrator(name, full_path, suffix)
+        name, _ = row_keys[table.cursor_row].value.split("|")
+        cb = self.query_one("#command-bar", Input)
+        cb.add_class("-visible"); cb.value = f"rename {name} "; cb.focus()
 
-    @work(exclusive=True)
-    async def run_edit_orchestrator(self, name: str, full_path: str, suffix: str):
-        default_editor = "notepad" if os.name == "nt" else "nano"
-        editor = os.environ.get("EDITOR", default_editor)
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp: tmp_path = tmp.name
+    @work(exclusive=True, thread=True)
+    def run_mkdir_task(self, name: str):
+        active = self.get_active_panel()
+        self.log_message(f"FTP REQ: MKD {name}")
         try:
-            self.log_message(f"Downloading {name}...")
-            await asyncio.to_thread(self.sync_download, full_path, tmp_path)
-            self.log_message(f"Opening {editor}...")
-            with self.suspend():
-                subprocess.run([editor, tmp_path], shell=(os.name=="nt"))
-            self.log_message("Uploading changes...")
-            await asyncio.to_thread(self.sync_upload, name, full_path, tmp_path)
-            os.unlink(tmp_path)
-            self.log_message(f"SUCCESS: {name} updated.")
-            self.action_refresh()
-        except Exception as e:
-            self.log_message(f"FAILED: {e}")
-            if os.path.exists(tmp_path): os.unlink(tmp_path)
+            cfg = load_config(); ftp = connect(cfg)
+            ftp.mkd(f"{active.current_path.rstrip('/')}/{name}")
+            ftp.quit()
+            self.log_message(f"FTP SUCCESS: Created directory {name}")
+            self.refresh_panel(active.panel_id, force_refresh=True)
+        except Exception as e: self.log_message(f"FTP ERROR: Mkdir failed: {e}")
 
-    def sync_download(self, remote: str, local: str):
+    @work(exclusive=True, thread=True)
+    def run_rename_task(self, new_name: str):
+        active = self.get_active_panel()
+        table = active.query_one(DataTable)
+        if table.cursor_row is None: return
+        row_keys = list(table.rows.keys())
+        old_name, _ = row_keys[table.cursor_row].value.split("|")
+        self.log_message(f"FTP REQ: RNFR {old_name} -> RNTO {new_name}")
+        try:
+            cfg = load_config(); ftp = connect(cfg)
+            old_p = f"{active.current_path.rstrip('/')}/{old_name}"
+            new_p = f"{active.current_path.rstrip('/')}/{new_name}"
+            ftp.rename(old_p, new_p)
+            ftp.quit()
+            self.log_message(f"FTP SUCCESS: Renamed {old_name}")
+            self.refresh_panel(active.panel_id, force_refresh=True)
+        except Exception as e: self.log_message(f"FTP ERROR: Rename failed: {e}")
+
+    def action_confirm_delete(self):
+        active = self.get_active_panel()
+        table = active.query_one(DataTable)
+        if table.cursor_row is None: return
+        row_keys = list(table.rows.keys())
+        name, is_dir = row_keys[table.cursor_row].value.split("|")
+        self.run_delete_task(name, is_dir == "True")
+
+    @work(exclusive=True, thread=True)
+    def run_delete_task(self, name: str, is_dir: bool):
+        active = self.get_active_panel()
+        self.log_message(f"FTP REQ: {'RMD' if is_dir else 'DELE'} {name}")
+        try:
+            cfg = load_config(); ftp = connect(cfg)
+            full_path = f"{active.current_path.rstrip('/')}/{name}"
+            if is_dir: ftp.rmd(full_path)
+            else: ftp.delete(full_path)
+            ftp.quit()
+            self.log_message(f"FTP SUCCESS: Deleted {name}")
+            self.refresh_panel(active.panel_id, force_refresh=True)
+        except Exception as e: self.log_message(f"FTP ERROR: Delete failed: {e}")
+
+    def action_upload_file(self):
+        cb = self.query_one("#command-bar", Input)
+        cb.add_class("-visible"); cb.value = "put "; cb.focus()
+
+    @work(exclusive=True, thread=True)
+    def run_upload_task(self, local_path: str):
+        active = self.get_active_panel()
+        path = Path(local_path)
+        if not path.exists(): self.log_message(f"LOCAL: File not found: {local_path}"); return
+        self.log_message(f"FTP REQ: STOR {path.name}")
+        try:
+            cfg = load_config(); ftp = connect(cfg)
+            remote_p = f"{active.current_path.rstrip('/')}/{path.name}"
+            with open(path, "rb") as f: ftp.storbinary(f"STOR {remote_p}", f)
+            ftp.quit()
+            self.log_message(f"FTP SUCCESS: Uploaded {path.name}")
+            self.refresh_panel(active.panel_id, force_refresh=True)
+        except Exception as e: self.log_message(f"FTP ERROR: Upload failed: {e}")
+
+    def action_refresh_active(self):
+        active = self.get_active_panel()
+        if active.viewing_file: active.show_table()
+        else: self.refresh_panel(active.panel_id, force_refresh=True)
+
+    def action_open_file(self):
+        active = self.get_active_panel()
+        if active.viewing_file: return
+        table = active.query_one(DataTable)
+        if table.cursor_row is not None:
+            row_keys = list(table.rows.keys())
+            name, is_dir = row_keys[table.cursor_row].value.split("|")
+            if is_dir == "False": self.run_open_task(name, active.current_path, active.panel_id)
+
+    @work(exclusive=True, thread=True)
+    def run_open_task(self, name: str, path: str, panel_id: str):
+        panel = self.query_one(f"#{panel_id}", FilePanel)
+        try:
+            cfg = load_config(); ftp = connect(cfg)
+            full_p = f"{path.rstrip('/')}/{name}"
+            lines = []
+            ftp.retrlines(f"RETR {full_p}", lines.append)
+            ftp.quit(); self.call_from_thread(panel.show_viewer, name, "\n".join(lines))
+        except Exception as e: self.log_message(f"Open failed: {e}")
+
+    def action_download_file(self):
+        active = self.get_active_panel()
+        table = active.query_one(DataTable)
+        if table.cursor_row is None: return
+        row_keys = list(table.rows.keys())
+        name, is_dir = row_keys[table.cursor_row].value.split("|")
+        if is_dir == "False":
+            self.run_download_task(name, f"{active.current_path.rstrip('/')}/{name}", str(Path.cwd()/name))
+
+    @work(exclusive=False, thread=True)
+    def run_download_task(self, name: str, rem, loc):
+        try:
+            self.sync_download(rem, loc)
+            self.log_message(f"Downloaded: {name}")
+        except Exception as e: self.log_message(f"Failed: {e}")
+
+    def sync_download(self, remote, local):
         cfg = load_config(); ftp = connect(cfg)
         with open(local, "wb") as f: ftp.retrbinary(f"RETR {remote}", f.write)
         ftp.quit()
 
-    def sync_upload(self, name: str, remote: str, local: str):
+    def sync_upload(self, remote, local):
         with open(local, "r") as f: content = f.read()
         from crow.safeguards import validate_action, make_backup
         validate_action(remote, content, False)
@@ -242,60 +400,86 @@ class CrowBrowser(App):
         with open(local, "rb") as f: ftp.storbinary(f"STOR {remote}", f)
         ftp.quit()
 
-    def handle_selection(self, row_key_value: str):
-        if not row_key_value: return
-        name, is_dir = row_key_value.split("|")
-        if is_dir == "True":
-            self.current_path = f"{self.current_path.rstrip('/')}/{name}"
-            self.action_refresh(); self.query_one("#search-bar").value = ""
+    def action_edit_file(self):
+        active = self.get_active_panel()
+        table = active.query_one(DataTable)
+        if table.cursor_row is None: return
+        row_keys = list(table.rows.keys())
+        name, is_dir = row_keys[table.cursor_row].value.split("|")
+        if is_dir == "False":
+            full_p = f"{active.current_path.rstrip('/')}/{name}"
+            def h(choice):
+                if choice:
+                    ed = os.environ.get("EDITOR", "nano") if choice=="Default (ENV)" else choice
+                    self.run_edit_orchestrator(name, full_p, active.panel_id, ed)
+            self.push_screen(EditorSelectionScreen(), h)
 
-    def on_data_table_row_selected(self, event: DataTable.RowSelected):
-        if event.row_key: self.handle_selection(event.row_key.value)
+    @work(exclusive=True)
+    async def run_edit_orchestrator(self, name: str, full_p: str, panel_id: str, editor: str):
+        with tempfile.NamedTemporaryFile(suffix=os.path.splitext(name)[1], delete=False) as tmp:
+            tmp_p = tmp.name
+        try:
+            await asyncio.to_thread(self.sync_download, full_p, tmp_p)
+            with self.suspend(): subprocess.run(editor.split() + [tmp_p], shell=(os.name=="nt"))
+            await asyncio.to_thread(self.sync_upload, full_p, tmp_p)
+            os.unlink(tmp_p); self.refresh_panel(panel_id)
+        except Exception as e: self.log_message(f"Edit failed: {e}")
 
-    def on_key(self, event):
-        if self.focused and self.focused.id == "sidebar":
-            sessions = list(load_sessions().keys()); current_idx = sessions.index(self.selected_id)
-            if event.key == "up": self.selected_id = sessions[(current_idx - 1) % len(sessions)]; self.update_session_info()
-            elif event.key == "down": self.selected_id = sessions[(current_idx + 1) % len(sessions)]; self.update_session_info()
-            elif event.key == "enter":
-                if self.current_id != self.selected_id:
-                    self.current_id = self.selected_id; self.current_path = get_cwd(self.current_id)
-                    self.update_session_info(); self.log_message(f"Loading session: {self.current_id}")
-                    self.query_one(DataTable).focus(); self.action_refresh()
-                else: self.query_one(DataTable).focus()
+    def action_show_preview(self):
+        active = self.get_active_panel()
+        table = active.query_one(DataTable)
+        if table.cursor_row is not None:
+            rk = list(table.rows.keys())[table.cursor_row].value
+            self.run_preview_task(rk, active.current_path)
+
+    @work(exclusive=True, thread=True)
+    def run_preview_task(self, rk: str, path: str):
+        name, is_dir = rk.split("|")
+        pb = self.query_one("#preview-box", Static)
+        if is_dir == "True": self.call_from_thread(pb.update, f"Dir: {name}"); return
+        try:
+            cfg = load_config(); ftp = connect(cfg); full_p = f"{path.rstrip('/')}/{name}"
+            lines = []
+            ftp.retrlines(f"RETR {full_p}", lambda l: lines.append(l) if len(lines)<15 else None)
+            ftp.quit(); syntax = Syntax("\n".join(lines), os.path.splitext(name)[1].strip(".") or "txt", theme="monokai")
+            self.call_from_thread(pb.update, syntax)
+        except Exception as e: self.call_from_thread(pb.update, f"Error: {e}")
+
+    @on(DataTable.RowSelected)
+    def handle_navigation(self, event: DataTable.RowSelected):
+        node = event.data_table
+        while node and not isinstance(node, FilePanel): node = node.parent
+        if node:
+            name, is_dir = event.row_key.value.split("|")
+            if is_dir == "True":
+                node.set_path(f"{node.current_path.rstrip('/')}/{name}"); self.refresh_panel(node.panel_id)
 
     def action_enter_item(self):
-        if self.focused and self.focused.id == "sidebar": return
-        table = self.query_one(DataTable)
+        active = self.get_active_panel()
+        table = active.query_one(DataTable)
         if table.cursor_row is not None:
-            try:
-                row_keys = list(table.rows.keys())
-                if table.cursor_row < len(row_keys): self.handle_selection(row_keys[table.cursor_row].value)
-            except: pass
+            rk = list(table.rows.keys())[table.cursor_row].value
+            name, is_dir = rk.split("|")
+            if is_dir == "True":
+                active.set_path(f"{active.current_path.rstrip('/')}/{name}"); self.refresh_panel(active.panel_id)
 
     def action_parent_dir(self):
-        if self.focused and self.focused.id == "sidebar": return
-        if self.current_path != "/":
-            parent = os.path.dirname(self.current_path.rstrip("/")) or "/"
-            self.current_path = parent; self.action_refresh()
+        active = self.get_active_panel()
+        if active.current_path != "/":
+            active.set_path(os.path.dirname(active.current_path.rstrip("/")) or "/"); self.refresh_panel(active.panel_id)
+
+    def action_open_shell(self):
+        active = self.get_active_panel()
+        with self.suspend(): commands.cmd_shell(SimpleNamespace(id=active.session_id))
+        self.refresh_panel(active.panel_id)
 
     def action_go_home(self):
-        self.current_path = "/"; self.action_refresh()
-
-    @on(Input.Changed, "#search-bar")
-    def filter_files(self, event: Input.Changed):
-        search_text = event.value.lower(); table = self.query_one(DataTable); table.clear()
-        for item in self.all_items:
-            if search_text in item["name"].lower():
-                icon = get_icon(item["name"], item["is_dir"])
-                display_name = Text(f"{icon} {item['name']}")
-                if item["is_dir"]: display_name.stylize("bold green")
-                table.add_row(display_name, item["size"], item["modified"], key=f"{item['name']}|{item['is_dir']}")
+        active = self.get_active_panel(); active.set_path("/"); self.refresh_panel(active.panel_id)
 
     def action_toggle_search(self):
-        sb = self.query_one("#search-bar")
-        if sb.has_class("-visible"): sb.remove_class("-visible"); self.query_one(DataTable).focus()
+        active = self.get_active_panel(); sb = active.query_one(".search-bar")
+        if sb.has_class("-visible"): sb.remove_class("-visible"); active.query_one(DataTable).focus()
         else: sb.add_class("-visible"); sb.focus()
 
 if __name__ == "__main__":
-    app = CrowBrowser(); app.run()
+    app = Crowmander(); app.run()

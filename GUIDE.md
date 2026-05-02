@@ -17,12 +17,12 @@ crow init
 ```
 Ikuti petunjuk di layar untuk memasukkan Host FTP, Username, dan Password kamu.
 
-## 3. Masuk ke Dunia Visual (TUI)
+## 3. Masuk ke Dunia Visual (Crowmander)
 Setelah setup selesai, jalankan:
 ```bash
 crow browse
 ```
-Kamu akan melihat tampilan yang dibagi menjadi 3 panel. Gunakan **Panah** untuk bergerak.
+Kamu akan masuk ke mode **Crowmander**, layout dua panel profesional untuk produktivitas maksimal.
 
 ## 4. Tips Cepat Menjelajah
 - **Bingung di mana?** Lihat Activity Log di pojok kanan bawah.
