@@ -62,6 +62,62 @@ def resolve_remote_path(path: str, session_id: str = "default") -> str:
         
     return f"{cwd}/{path}"
 
+def get_watchout_dir() -> Path:
+    path = Path.cwd() / ".watchout"
+    path.mkdir(exist_ok=True)
+    return path
+
+def load_watchout_config() -> dict:
+    path = get_watchout_dir() / "config.json"
+    default = {
+        "conflict_detect": True,
+        "large_file_warning": True,
+        "sensitive_data_scan": True,
+        "syntax_guard": True,
+        "smart_context": True,
+        "quota_watcher": True,
+        "integrity_verify": True
+    }
+    if not path.exists():
+        with open(path, "w") as f: json.dump(default, f, indent=2)
+        return default
+    try:
+        with open(path) as f: return json.load(f)
+    except: return default
+
+def load_versions() -> dict:
+    path = get_watchout_dir() / "versions.json"
+    if not path.exists():
+        return {}
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_versions(versions: dict):
+    path = get_watchout_dir() / "versions.json"
+    with open(path, "w") as f:
+        json.dump(versions, f, indent=2)
+
+def get_cwd(session_id: str = "default") -> str:
+    sessions = load_sessions()
+    return sessions.get(session_id, "/")
+
+def resolve_remote_path(path: str, session_id: str = "default") -> str:
+    """Combine session CWD with requested path."""
+    if not path:
+        path = "."
+        
+    if path.startswith("/"):
+        return path
+    
+    cwd = get_cwd(session_id).rstrip("/")
+    if path == ".":
+        return cwd if cwd else "/"
+        
+    return f"{cwd}/{path}"
+
 # ─── FTP Connection ─────────────────────────────────────────────────────────────
 
 def connect(cfg: dict) -> ftplib.FTP:

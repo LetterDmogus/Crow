@@ -394,7 +394,7 @@ class Crowmander(App):
 
     def sync_upload(self, remote, local):
         with open(local, "r") as f: content = f.read()
-        from crow.safeguards import validate_action, make_backup
+        from crow.watchout import validate_action, make_backup
         validate_action(remote, content, False)
         cfg = load_config(); ftp = connect(cfg); make_backup(ftp, remote)
         with open(local, "rb") as f: ftp.storbinary(f"STOR {remote}", f)

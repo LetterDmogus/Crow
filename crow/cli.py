@@ -81,6 +81,7 @@ commands:
     # logs
     p_logs = sub.add_parser("logs", parents=[parent_parser], help="Discover log files")
     p_logs.add_argument("--tail", action="store_true", help="Automatically tail the first log found")
+    p_logs.add_argument("--watch", action="store_true", help="Monitor the log for new errors in real-time")
 
     # diff
     p_diff = sub.add_parser("diff", parents=[parent_parser], help="Compare remote and local")

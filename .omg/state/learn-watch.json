@@ -1,12 +1,12 @@
 {
-  "last_session_id": "7974036a-2e68-4698-bf56-5b567ec87450",
-  "last_event_key": "7974036a-2e68-4698-bf56-5b567ec87450:transcript:4fbbc2d471d1a7dbe39acc9728d12304d00ebdefdb749a84315befcda5e4aba0",
-  "last_prompted_session_id": "7974036a-2e68-4698-bf56-5b567ec87450",
-  "last_reason": "already-prompted-this-session",
-  "last_prompted_at": "2026-05-02T03:56:15.138Z",
-  "last_user_message_count": 19,
-  "last_actionable_message_count": 1,
+  "last_session_id": "84d3154f-5ac4-4e21-949b-1a25a85629cd",
+  "last_event_key": "84d3154f-5ac4-4e21-949b-1a25a85629cd:transcript:2bc26f8a1c9a0ddf63376c4c57303427f4768df1cdf1284bde54b431728d132a",
+  "last_prompted_session_id": "84d3154f-5ac4-4e21-949b-1a25a85629cd",
+  "last_reason": "prompt-cooldown-active",
+  "last_prompted_at": "2026-05-02T09:31:23.408Z",
+  "last_user_message_count": 20,
+  "last_actionable_message_count": 0,
   "deep_interview_lock_active": false,
   "deep_interview_lock_source": "/home/floaty/Documents/Python/Crow/.omg/state/deep-interview.json",
-  "updated_at": "2026-05-02T04:41:47.599Z"
+  "updated_at": "2026-05-02T09:53:10.230Z"
 }
