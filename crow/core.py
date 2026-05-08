@@ -129,6 +129,9 @@ def connect(cfg: dict) -> ftplib.FTP:
     ftp.connect(host, port, timeout=timeout)
     ftp.login(cfg["user"], cfg["password"])
 
+    # Force Binary mode (TYPE I)
+    ftp.voidcmd('TYPE I')
+
     passive = cfg.get("passive", True)
     ftp.set_pasv(passive)
 
