@@ -17,12 +17,10 @@ def build_parser():
 commands:
   init              Create .ftp-tool.json config
   info              Show active config
-  skill             Print SKILL.md for AI context
   cd PATH           Change virtual CWD for a session
   shell             Start interactive shell
-  browse            Start TUI browser
+  dashboard         Start health dashboard
   list [PATH]       List remote directory
-  get REMOTE [LOCAL] Download file
   put LOCAL [REMOTE] Upload file
   read REMOTE       Print file content
   tail REMOTE       Read last N lines
@@ -32,24 +30,49 @@ commands:
   delete REMOTE     Delete file
   mkdir REMOTE      Create directory
   edit REMOTE       Download → Edit → Upload
-  map               Generate FTP_TREE.md
-  pull REMOTE [LOCAL] Download directory recursively
-  push LOCAL [REMOTE] Upload directory recursively
+  scan [PATHS...]   Scan and sync files/folders
+  migrate           Upgrade from v1 to v2
+  workspace init    Initialize virtual workspace
+  workspace status  Show workspace status
+  workspace sync    Force sync manifest with server
+  watch start       Start watching for local changes
 """
     )
 
     sub = parser.add_subparsers(dest="command")
 
+    # watch group
+    p_watch = sub.add_parser("watch", parents=[parent_parser], help="Watching agent management")
+    watch_sub = p_watch.add_subparsers(dest="subcommand")
+    
+    # watch start
+    watch_sub.add_parser("start", help="Start watcher")
+
+    # workspace group
+    p_ws = sub.add_parser("workspace", parents=[parent_parser], help="Virtual workspace management")
+    ws_sub = p_ws.add_subparsers(dest="subcommand")
+
+    # workspace init
+    p_ws_init = ws_sub.add_parser("init", help="Initialize workspace")
+    p_ws_init.add_argument("--preset", choices=["laravel"], help="Preset for auto-ignore")
+
+    # workspace status
+    p_ws_status = ws_sub.add_parser("status", help="Show workspace status")
+    p_ws_status.add_argument("--list", action="store_true", help="List files for each status")
+
+    # workspace sync
+    p_ws_sync = ws_sub.add_parser("sync", help="Force sync manifest")
+
     # init
     sub.add_parser("init", parents=[parent_parser], help="Create config")
     # info
     sub.add_parser("info", parents=[parent_parser], help="Show active config")
-    # skill
-    sub.add_parser("skill", parents=[parent_parser], help="Print SKILL.md")
     # shell
     sub.add_parser("shell", parents=[parent_parser], help="Start interactive shell")
-    # browse
-    sub.add_parser("browse", parents=[parent_parser], help="Start TUI browser")
+    # dashboard
+    sub.add_parser("dashboard", parents=[parent_parser], help="Start health dashboard")
+    # browse (deprecated)
+    sub.add_parser("browse", parents=[parent_parser])
 
     # cd
     p_cd = sub.add_parser("cd", parents=[parent_parser], help="Change virtual CWD")
@@ -58,11 +81,6 @@ commands:
     # list
     p_list = sub.add_parser("list", parents=[parent_parser], help="List remote directory")
     p_list.add_argument("path", nargs="?", default=None, help="Remote path")
-
-    # get
-    p_get = sub.add_parser("get", parents=[parent_parser], help="Download file")
-    p_get.add_argument("remote", help="Remote file path")
-    p_get.add_argument("local", nargs="?", default=None, help="Local destination")
 
     # put
     p_put = sub.add_parser("put", parents=[parent_parser], help="Upload file")
@@ -112,19 +130,14 @@ commands:
     p_edit.add_argument("remote", help="Remote file path")
     p_edit.add_argument("--path-only", action="store_true", help="Download and return path for AI editing")
 
-    # map
-    p_map = sub.add_parser("map", parents=[parent_parser], help="Generate FTP_TREE.md")
-    p_map.add_argument("--refresh", action="store_true", help="Force scan")
+    # scan
+    p_scan = sub.add_parser("scan", parents=[parent_parser], help="Scan and sync files/folders")
+    p_scan.add_argument("paths", nargs="+", help="Paths to scan")
+    p_scan.add_argument("--depth", type=int, choices=[1, 2, 3], default=1, help="Recursion depth (max 3)")
+    p_scan.add_argument("--get", action="store_true", help="Download file content (hydrate)")
 
-    # pull
-    p_pull = sub.add_parser("pull", parents=[parent_parser], help="Download directory recursively")
-    p_pull.add_argument("remote", help="Remote directory path")
-    p_pull.add_argument("local", nargs="?", default=None, help="Local destination path")
-
-    # push
-    p_push = sub.add_parser("push", parents=[parent_parser], help="Upload directory recursively")
-    p_push.add_argument("local", help="Local directory path")
-    p_push.add_argument("remote", nargs="?", default=None, help="Remote destination path")
+    # migrate
+    sub.add_parser("migrate", parents=[parent_parser], help="Upgrade v1 to v2")
 
     return parser
 
@@ -139,12 +152,11 @@ def main():
     dispatch = {
         "init":   commands.cmd_init,
         "info":   commands.cmd_info,
-        "skill":  commands.cmd_skill,
         "cd":     commands.cmd_cd,
         "shell":  commands.cmd_shell,
+        "dashboard": commands.cmd_dashboard,
         "browse": commands.cmd_browse,
         "list":   commands.cmd_list,
-        "get":    commands.cmd_get,
         "put":    commands.cmd_put,
         "read":   commands.cmd_read,
         "tail":   commands.cmd_tail,
@@ -155,9 +167,10 @@ def main():
         "delete": commands.cmd_delete,
         "mkdir":  commands.cmd_mkdir,
         "edit":   commands.cmd_edit,
-        "map":    commands.cmd_map,
-        "pull":   commands.cmd_pull,
-        "push":   commands.cmd_push,
+        "scan":   commands.cmd_scan,
+        "migrate": commands.cmd_migrate,
+        "workspace": commands.cmd_workspace,
+        "watch":  commands.cmd_watch,
     }
 
     fn = dispatch.get(args.command)

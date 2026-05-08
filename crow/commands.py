@@ -308,8 +308,13 @@ def cmd_info(args):
 def cmd_shell(args):
     from crow.shell import CrowShell; shell = CrowShell(); shell.cmdloop()
 
+def cmd_dashboard(args):
+    from crow.tui.app import DashboardApp
+    app = DashboardApp()
+    app.run()
+
 def cmd_browse(args):
-    from crow.tui.app import Crowmander; app = Crowmander(); app.run()
+    die("Command 'browse' is deprecated. Use 'crow dashboard' instead.")
 
 def cmd_diff(args):
 
