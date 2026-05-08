@@ -414,6 +414,8 @@ def cmd_workspace(args):
         cmd_workspace_status(args)
     elif args.subcommand == "sync":
         cmd_workspace_sync(args)
+    elif args.subcommand == "update":
+        cmd_workspace_update(args)
 
 def cmd_workspace_init(args):
     from crow.workspace import init_workspace
@@ -517,6 +519,32 @@ def cmd_workspace_status(args):
 
 def cmd_workspace_sync(args):
     console.print("[info]Workspace sync not fully implemented yet.[/]")
+
+def cmd_workspace_update(args):
+    import os
+    import shutil
+    from crow.manifest import Manifest
+    from crow.workspace import generate_shortcut, DEFAULT_CROW_MD_CONTENT
+    
+    # 1. Backup and Refresh CROW.md
+    if os.path.exists("CROW.md"):
+        shutil.move("CROW.md", "CROW.md.bak")
+        info("Backed up CROW.md to CROW.md.bak")
+    
+    with open("CROW.md", "w") as f:
+        f.write(DEFAULT_CROW_MD_CONTENT)
+    ok("Generated latest CROW.md")
+
+    # 2. Refresh Shortcuts
+    generate_shortcut()
+    ok("Refreshed OS shortcuts")
+
+    # 3. Bump Manifest Version
+    manifest = Manifest()
+    old_version = manifest.data.get("version", "unknown")
+    manifest.data["version"] = "2.0.1"
+    manifest.save()
+    ok(f"Bumped manifest version from {old_version} to 2.0.1")
 
 def cmd_migrate(args):
     console.print("[bold magenta]=== Crow Migration (v1 -> v2) ===[/]")

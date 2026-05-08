@@ -3,6 +3,16 @@ import sys
 import stat
 from crow.manifest import Manifest
 
+DEFAULT_CROW_MD_CONTENT = """---
+auto_scan: []
+scan_interval: 5
+auto_yes: false
+---
+
+# Crow Project Notes
+Write your project-specific notes and watcher rules here.
+"""
+
 def generate_shortcut():
     """Generates OS-specific shortcut to launch crow dashboard."""
     cwd = os.getcwd()
