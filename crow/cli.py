@@ -35,6 +35,7 @@ commands:
   workspace init    Initialize virtual workspace
   workspace status  Show workspace status
   workspace sync    Force sync manifest with server
+  workspace update  Refresh core files and bump manifest version
   watch start       Start watching for local changes
 """
     )
@@ -62,6 +63,9 @@ commands:
 
     # workspace sync
     p_ws_sync = ws_sub.add_parser("sync", help="Force sync manifest")
+
+    # workspace update
+    ws_sub.add_parser("update", help="Refresh core files and bump manifest version")
 
     # init
     sub.add_parser("init", parents=[parent_parser], help="Create config")
