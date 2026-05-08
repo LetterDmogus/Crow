@@ -45,3 +45,27 @@ def init_workspace(remote_files, preset=None):
     
     manifest.save()
     generate_shortcut()
+
+def check_integrity():
+    """Checks for critical workspace components: .crow-manifest.json, workspace/ folder, CROW.md."""
+    from crow.manifest import Manifest
+    manifest = Manifest()
+    results = {
+        "manifest": os.path.exists(manifest.path),
+        "workspace": os.path.exists("workspace"),
+        "crow_md": os.path.exists("CROW.md")
+    }
+    return results
+
+def fix_integrity():
+    """Fixes workspace integrity issues by creating missing folders and ghost files from manifest."""
+    from crow.manifest import Manifest
+    manifest = Manifest()
+    if not os.path.exists("workspace"):
+        os.makedirs("workspace")
+    
+    for path, info in manifest.data.get("files", {}).items():
+        local_path = os.path.join("workspace", path)
+        if not os.path.exists(local_path):
+            create_ghost_file(local_path)
+    return True
