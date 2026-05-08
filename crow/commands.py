@@ -187,8 +187,18 @@ def cmd_tail(args):
     remote = resolve_remote_path(args.remote, session_id); lines_count = int(args.lines or 20)
     try:
         ftp = connect(cfg); remote = smart_resolve(ftp, remote); size = ftp.size(remote)
-        offset = max(0, size - (lines_count * 200)); lines = []
-        ftp.voidcmd(f"REST {offset}"); ftp.retrlines(f"RETR {remote}", lines.append); ftp.quit()
+        offset = max(0, size - (lines_count * 200)); 
+        
+        # Use binary retrieval to support REST and avoid ASCII mode errors
+        data = []
+        ftp.voidcmd(f"REST {offset}")
+        ftp.retrbinary(f"RETR {remote}", data.append)
+        ftp.quit()
+        
+        # Decode and split into lines
+        content = b"".join(data).decode("utf-8", errors="replace")
+        lines = content.splitlines()
+        
         output = lines[-lines_count:]
         console.print(f"[info]Last {len(output)} lines of {remote}:[/]")
         for l in output: console.print(l)
@@ -336,9 +346,10 @@ def cmd_logs(args):
                     time.sleep(5)
                     curr_size = ftp.size(target)
                     if curr_size > last_size:
-                        lines = []
+                        data = []
                         ftp.voidcmd(f"REST {last_size}")
-                        ftp.retrlines(f"RETR {target}", lines.append)
+                        ftp.retrbinary(f"RETR {target}", data.append)
+                        lines = b"".join(data).decode("utf-8", errors="replace").splitlines()
                         log_error_alert(target, lines)
                         last_size = curr_size
                     elif curr_size < last_size:
