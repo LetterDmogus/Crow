@@ -6,6 +6,7 @@ import json
 import time
 import subprocess
 import re
+import requests
 from pathlib import Path
 from rich.table import Table
 from rich.markdown import Markdown
@@ -14,6 +15,7 @@ from crow.core import connect, load_config, save_config, CONFIG_FILENAME, load_s
 from crow.utils import ok, die, console, info
 from crow.lock import CrowLock
 from crow.watchout import make_backup, validate_action, backup_folder_local, record_version, check_conflict, track_quota, ghost_file_alert, verify_upload, suggest_dependencies, log_error_alert, is_synced
+from crow.transmitter import zip_folder, generate_bridge
 
 def parse_ftp_line(line: str):
     """Robust parser for FTP LIST output."""
@@ -679,3 +681,60 @@ def perform_scan(paths, depth=1, do_get=False, session_id="default"):
 
     except Exception as e:
         die(str(e))
+
+def cmd_transmit(args):
+    local_dir = args.local_dir
+    remote_path = args.remote_path or "."
+    
+    # 1. Load config and connect
+    cfg = load_config()
+    web_url = cfg.get("web_url")
+    if not web_url:
+        die("Error: 'web_url' not found in config. Required for transmitter.")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_name = "payload.zip"
+        zip_path = os.path.join(tmpdir, zip_name)
+        bridge_name = "crow-bridge.php"
+        bridge_path = os.path.join(tmpdir, bridge_name)
+        
+        # 2. Pack
+        ok(f"Packing [cyan]{local_dir}[/]...")
+        zip_folder(local_dir, zip_path)
+        
+        # 3. Generate Bridge
+        content, key = generate_bridge(zip_name)
+        with open(bridge_path, "w") as f:
+            f.write(content)
+            
+        # 4. Upload
+        ftp = connect(cfg)
+        remote_full = resolve_remote_path(remote_path)
+        try:
+            ftp.cwd(remote_full)
+        except:
+            ftp.mkd(remote_full)
+            ftp.cwd(remote_full)
+            
+        ok(f"Uploading to [cyan]{remote_full}[/]...")
+        with open(zip_path, "rb") as f:
+            ftp.storbinary(f"STOR {zip_name}", f)
+        with open(bridge_path, "rb") as f:
+            ftp.storbinary(f"STOR {bridge_name}", f)
+        ftp.quit()
+        
+        # 5. Trigger
+        trigger_url = f"{web_url.rstrip('/')}/{remote_full.lstrip('/')}/{bridge_name}?key={key}"
+        ok(f"Triggering bridge: [dim]{trigger_url}[/]")
+        
+        try:
+            res = requests.get(trigger_url, timeout=30)
+            result = res.json()
+            if result.get("success"):
+                ok(f"Success! Extracted {result['extracted']} files.")
+                if result['deleted']:
+                    info(f"Smart Clean: Deleted {len(result['deleted'])} obsolete files.")
+            else:
+                die(f"Remote Error: {result.get('errors')}")
+        except Exception as e:
+            die(f"Trigger failed: {e}")

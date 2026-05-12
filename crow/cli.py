@@ -31,6 +31,7 @@ commands:
   mkdir REMOTE      Create directory
   edit REMOTE       Download → Edit → Upload
   scan [PATHS...]   Scan and sync files/folders
+  transmit LOCAL_DIR [REMOTE] Super speed upload (ZIP + PHP)
   migrate           Upgrade from v1 to v2
   workspace init    Initialize virtual workspace
   workspace status  Show workspace status
@@ -140,6 +141,11 @@ commands:
     p_scan.add_argument("--depth", type=int, choices=[1, 2, 3], default=1, help="Recursion depth (max 3)")
     p_scan.add_argument("--get", action="store_true", help="Download file content (hydrate)")
 
+    # transmit
+    p_transmit = sub.add_parser("transmit", parents=[parent_parser], help="Super speed upload (ZIP + PHP)")
+    p_transmit.add_argument("local_dir", help="Local directory to upload")
+    p_transmit.add_argument("remote_path", nargs="?", help="Remote target path")
+
     # migrate
     sub.add_parser("migrate", parents=[parent_parser], help="Upgrade v1 to v2")
 
@@ -172,6 +178,7 @@ def main():
         "mkdir":  commands.cmd_mkdir,
         "edit":   commands.cmd_edit,
         "scan":   commands.cmd_scan,
+        "transmit": commands.cmd_transmit,
         "migrate": commands.cmd_migrate,
         "workspace": commands.cmd_workspace,
         "watch":  commands.cmd_watch,
