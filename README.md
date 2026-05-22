@@ -10,13 +10,13 @@ Speedrun mengerjakan projek ini karena tugas sekolah mendadak menjadi cloud base
 Jadi saya menghabiskan beberapa jam untuk mengerjakan versi awalnya, dan kemudian membuat versi browser untuk mempercepat quick edit.
 Update terbaru ada 2 fitur besar, Crow Watchout dan Crow FTP Manager, habis ini kalau gak ada ide kayaknya akan fokus ke security improve aja.
 
-## Fitur Unggulan (V1.6.0)
+## Fitur Unggulan (V2.0.0)
 ---
+- **Virtual Workspace**: Bekerja dengan *ghost files* (0kb) yang mencerminkan FTP. Navigasi kilat tanpa download semua file di awal.
+- **Watching Agent**: Jalankan `crow watch start` dan biarkan Crow melakukan sinkronisasi otomatis saat kamu menyimpan file.
+- **Smart Scan**: Gunakan `crow scan` dengan kontrol kedalaman (`--depth`) untuk sinkronisasi struktur atau download kode secara massal.
 - **Visual TUI Browser**: Jalankan `crow browse` untuk membuka FTP Browser di dalam terminal. Lengkap dengan double panel system dan shorcut edit.
-- **Integrated Shell**: Akses command-line penuh langsung dari dalam TUI (`:`).
-- **Parallel Sessions**: Kelola banyak server/folder sekaligus dengan sistem ID (`--id`).
 - **Watch-out System**: Fitur keamanan lengkap dengan local backup, versioning check, conflict detect, dan quota watch.
-- **Push-Pull System**: Fitur multiple file editing agar ai bisa melakukan perubahan ke folder spesifik tanpa harus ulang download semua file.
 
 ## Instalasi Cepat
 ---

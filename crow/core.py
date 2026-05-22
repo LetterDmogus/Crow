@@ -124,7 +124,7 @@ def connect(cfg: dict) -> ftplib.FTP:
     ftp = ftplib.FTP()
     host = cfg["host"]
     port = int(cfg.get("port", 21))
-    timeout = int(cfg.get("timeout", 10))
+    timeout = int(cfg.get("timeout", 60))
 
     ftp.connect(host, port, timeout=timeout)
     ftp.login(cfg["user"], cfg["password"])

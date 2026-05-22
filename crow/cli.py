@@ -123,8 +123,9 @@ commands:
     p_write.add_argument("content", help="Content to write")
 
     # delete
-    p_del = sub.add_parser("delete", parents=[parent_parser], help="Delete file")
-    p_del.add_argument("remote", help="Remote file path")
+    p_del = sub.add_parser("delete", parents=[parent_parser], help="Delete file or folder")
+    p_del.add_argument("remote", help="Remote path")
+    p_del.add_argument("-r", "--recursive", action="store_true", help="Delete folder and its contents recursively")
 
     # mkdir
     p_mkdir = sub.add_parser("mkdir", parents=[parent_parser], help="Create directory")
@@ -145,6 +146,7 @@ commands:
     p_transmit = sub.add_parser("transmit", parents=[parent_parser], help="Super speed upload (ZIP + PHP)")
     p_transmit.add_argument("local_dir", help="Local directory to upload")
     p_transmit.add_argument("remote_path", nargs="?", help="Remote target path")
+    p_transmit.add_argument("--repair", action="store_true", help="Only upload/trigger bridge (skip ZIP upload)")
 
     # migrate
     sub.add_parser("migrate", parents=[parent_parser], help="Upgrade v1 to v2")

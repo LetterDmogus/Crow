@@ -7,15 +7,18 @@ import time
 import subprocess
 import re
 import requests
+import secrets
+import string
 from pathlib import Path
 from rich.table import Table
 from rich.markdown import Markdown
 from rich.prompt import Confirm
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, DownloadColumn, TransferSpeedColumn, TimeRemainingColumn
 from crow.core import connect, load_config, save_config, CONFIG_FILENAME, load_sessions, save_sessions, resolve_remote_path, get_cwd, load_watchout_config
 from crow.utils import ok, die, console, info
 from crow.lock import CrowLock
 from crow.watchout import make_backup, validate_action, backup_folder_local, record_version, check_conflict, track_quota, ghost_file_alert, verify_upload, suggest_dependencies, log_error_alert, is_synced
-from crow.transmitter import zip_folder, generate_bridge
+from crow.transmitter import pack_folder, generate_bridge
 
 def parse_ftp_line(line: str):
     """Robust parser for FTP LIST output."""
@@ -163,7 +166,9 @@ def cmd_put(args):
     validate_action(remote, content, getattr(args, "force", False))
     with CrowLock():
         try:
-            ftp = connect(cfg); check_conflict(ftp, remote); make_backup(ftp, remote)
+            ftp = connect(cfg); check_conflict(ftp, remote)
+            if not w_cfg.get("disable_backup", False):
+                make_backup(ftp, remote)
         
             # Quota Tracking (Upload)
             track_quota(len(content), "up")
@@ -214,7 +219,10 @@ def cmd_write(args):
     if content == "-": content = sys.stdin.read()
     validate_action(remote, content, force)
     try:
-        ftp = connect(cfg); check_conflict(ftp, remote); make_backup(ftp, remote); encoded = content.encode("utf-8")
+        ftp = connect(cfg); check_conflict(ftp, remote)
+        if not w_cfg.get("disable_backup", False):
+            make_backup(ftp, remote)
+        encoded = content.encode("utf-8")
         
         # Quota Tracking (Upload)
         track_quota(len(encoded), "up")
@@ -236,13 +244,61 @@ def cmd_write(args):
         ok(f"Written {len(encoded)} bytes → [cyan]{remote}[/]")
     except Exception as e: die(str(e))
 
+def ftp_delete_recursive(ftp, remote_path):
+    """Recursively delete a directory and all its contents."""
+    try:
+        items = []
+        ftp.retrlines(f"LIST {remote_path}", items.append)
+        
+        for line in items:
+            item = parse_ftp_line(line)
+            if not item: continue
+            
+            # Ensure we only get the filename, not the full path if the server returns it
+            item_name = os.path.basename(item['name'])
+            if item_name in [".", ".."]: continue
+            
+            # Join paths correctly, preserving the leading slash of remote_path
+            full_p = f"{remote_path.rstrip('/')}/{item_name}"
+            
+            if item['is_dir']:
+                ftp_delete_recursive(ftp, full_p)
+            else:
+                ftp.delete(full_p)
+                console.print(f"[dim]Deleted file:[/] {full_p}")
+        
+        ftp.rmd(remote_path)
+        console.print(f"[red]Deleted folder:[/] {remote_path}")
+    except Exception as e:
+        console.print(f"[error]Failed to delete {remote_path}: {e}[/]")
+
 def cmd_delete(args):
     cfg = load_config(); session_id = getattr(args, "id", "default")
     remote = resolve_remote_path(args.remote, session_id); force = getattr(args, "force", False)
+    recursive = getattr(args, "recursive", False)
+    
     try:
         ftp = connect(cfg); remote = smart_resolve(ftp, remote)
-        validate_action(remote, None, force); make_backup(ftp, remote)
-        ftp.delete(remote); ftp.quit(); ok(f"Deleted [cyan]{remote}[/] (Backup saved locally)")
+        validate_action(remote, None, force)
+        
+        w_cfg = load_watchout_config()
+        if not w_cfg.get("disable_backup", False):
+            make_backup(ftp, remote)
+            
+        if recursive:
+            info(f"Recursively deleting [bold red]{remote}[/]...")
+            ftp_delete_recursive(ftp, remote)
+        else:
+            try:
+                ftp.delete(remote)
+            except ftplib.error_perm:
+                # If it fails, maybe it's a directory
+                try:
+                    ftp.rmd(remote)
+                except:
+                    die(f"Failed to delete [cyan]{remote}[/]. Is it a non-empty folder? Use -r to delete recursively.")
+        
+        ftp.quit(); ok(f"Delete operation completed for [cyan]{remote}[/]")
     except Exception as e: die(str(e))
 
 def cmd_mkdir(args):
@@ -280,7 +336,9 @@ def cmd_edit(args):
         # Conflict Detect: Check before re-upload
         check_conflict(ftp2, remote)
         
-        make_backup(ftp2, remote)
+        if not w_cfg.get("disable_backup", False):
+            make_backup(ftp2, remote)
+            
         with open(tmp_path, "rb") as f: ftp2.storbinary(f"STOR {remote}", f)
         
         # Watch-out: Integrity Verify
@@ -693,14 +751,36 @@ def cmd_transmit(args):
         die("Error: 'web_url' not found in config. Required for transmitter.")
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        zip_name = "payload.zip"
+        zip_name = "payload.pack"
         zip_path = os.path.join(tmpdir, zip_name)
-        bridge_name = "crow-bridge.php"
+        
+        # Use a more "natural" random filename for the bridge
+        random_suffix = ''.join(secrets.choice(string.ascii_lowercase) for _ in range(6))
+        bridge_name = f"update_{random_suffix}.php"
         bridge_path = os.path.join(tmpdir, bridge_name)
         
-        # 2. Pack
-        ok(f"Packing [cyan]{local_dir}[/]...")
-        zip_folder(local_dir, zip_path)
+        # 2. Pack (Skip if repair)
+        if not getattr(args, "repair", False):
+            # Count files first
+            all_files_count = 0
+            for r, d, files in os.walk(local_dir):
+                all_files_count += len(files)
+
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                console=console
+            ) as progress:
+                task = progress.add_task(f"Packing {all_files_count} files...", total=all_files_count)
+                def pack_cb(path, size):
+                    progress.update(task, advance=1, description=f"Packed: [dim]{os.path.basename(path)}[/]")
+                
+                pack_folder(local_dir, zip_path, callback=pack_cb)
+            ok(f"Packed [cyan]{local_dir}[/] -> [bold]{zip_name}[/]")
+        else:
+            info("Repair mode: Skipping local zipping.")
         
         # 3. Generate Bridge
         content, key = generate_bridge(zip_name)
@@ -716,25 +796,92 @@ def cmd_transmit(args):
             ftp.mkd(remote_full)
             ftp.cwd(remote_full)
             
-        ok(f"Uploading to [cyan]{remote_full}[/]...")
-        with open(zip_path, "rb") as f:
-            ftp.storbinary(f"STOR {zip_name}", f)
+        if not getattr(args, "repair", False):
+            file_size = os.path.getsize(zip_path)
+            with Progress(
+                TextColumn("[bold blue]{task.description}"),
+                BarColumn(),
+                DownloadColumn(),
+                TransferSpeedColumn(),
+                TimeRemainingColumn(),
+                console=console
+            ) as progress:
+                task = progress.add_task(f"Uploading {zip_name}", total=file_size)
+                
+                with open(zip_path, "rb") as f:
+                    def upload_cb(data):
+                        progress.update(task, advance=len(data))
+                    ftp.storbinary(f"STOR {zip_name}", f, callback=upload_cb)
+        
+        ok(f"Uploading bridge [cyan]{bridge_name}[/]...")
         with open(bridge_path, "rb") as f:
             ftp.storbinary(f"STOR {bridge_name}", f)
         ftp.quit()
         
-        # 5. Trigger
-        trigger_url = f"{web_url.rstrip('/')}/{remote_full.lstrip('/')}/{bridge_name}?key={key}"
-        ok(f"Triggering bridge: [dim]{trigger_url}[/]")
+        # 5. Trigger (Chunked Extraction)
+        # Strip web_root from remote_full if present
+        web_root = cfg.get("web_root", "").strip("/")
+        url_path = remote_full.lstrip("/")
+        if web_root and url_path.startswith(web_root):
+            url_path = url_path[len(web_root):].lstrip("/")
+
+        trigger_url = f"{web_url.rstrip('/')}/{url_path}/{bridge_name}"
+        trigger_url = trigger_url.replace("//", "/").replace(":/", "://")
         
-        try:
-            res = requests.get(trigger_url, timeout=30)
-            result = res.json()
-            if result.get("success"):
-                ok(f"Success! Extracted {result['extracted']} files.")
-                if result['deleted']:
-                    info(f"Smart Clean: Deleted {len(result['deleted'])} obsolete files.")
-            else:
-                die(f"Remote Error: {result.get('errors')}")
-        except Exception as e:
-            die(f"Trigger failed: {e}")
+        pointer = 0
+        total_extracted = 0
+        retries = 0
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold yellow]Extracting on server... {task.fields[info]}"),
+            console=console
+        ) as progress:
+            task = progress.add_task("Extracting", total=None, info="")
+            
+            while True:
+                try:
+                    res = requests.post(trigger_url, data={'key': key, 'pointer': pointer}, headers=headers, timeout=60)
+                    
+                    # If we get a 500, the server might just be tired. Let's retry a few times.
+                    if res.status_code == 500:
+                        if retries < 3:
+                            retries += 1
+                            progress.update(task, info=f"(Server busy, retrying {retries}/3...)")
+                            time.sleep(2)
+                            continue
+                        else:
+                            die(f"Extraction failed after 3 retries (HTTP 500).")
+                    
+                    retries = 0 # Reset retries on success
+                    try:
+                        result = res.json()
+                    except Exception:
+                        die(f"Extraction failed. Server returned non-JSON response (HTTP {res.status_code}):\n{res.text[:500]}")
+
+                    if not result.get("success") and result.get("done") is not False:
+                        die(f"Remote Error: {result.get('errors')}")
+
+                    total_extracted += result.get("extracted", 0)
+                    progress.update(task, info=f"({total_extracted} files so far)")
+                    
+                    if result.get("done"):
+                        break
+                    
+                    pointer = result.get("next_pointer", 0)
+                    if pointer == 0: # Safety check to avoid infinite loop
+                        break
+                    
+                    # Give the server some breathing room between pulses
+                    time.sleep(5)
+                        
+                except Exception as e:
+                    die(f"Trigger failed during extraction loop: {e}")
+
+        ok(f"Success! Extracted {total_extracted} files.")
+        if result.get('deleted'):
+            info(f"Smart Clean: Deleted {len(result['deleted'])} obsolete files.")

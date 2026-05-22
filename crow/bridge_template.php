@@ -1,69 +1,88 @@
 <?php
 /**
- * Crow Speed Bridge
- * One-time use script for ZIP extraction and Smart Clean.
+ * Crow Pulsing Bridge (Gentle Extraction)
  */
+ignore_user_abort(true);
+set_time_limit(30);
 
 $key = "{{KEY}}";
-$zipName = "{{ZIP_NAME}}";
+$packFile = "{{ZIP_NAME}}";
 $targetDir = __DIR__;
+$bridgeFile = __FILE__;
 
-if (($_GET['key'] ?? '') !== $key) {
+if (($_POST['key'] ?? '') !== $key) {
     header('HTTP/1.1 403 Forbidden');
-    echo json_encode(['success' => false, 'error' => 'Invalid key']);
     exit;
 }
 
-$report = ['deleted' => [], 'extracted' => 0, 'errors' => []];
+$pointer = (int)($_POST['pointer'] ?? 0);
+$startTime = time();
+$report = ['extracted' => 0, 'errors' => [], 'done' => false, 'next_pointer' => 0];
 
 try {
-    $zip = new ZipArchive;
-    if ($zip->open($zipName) === TRUE) {
-        // 1. Get list of files in ZIP
-        $zipFiles = [];
-        for ($i = 0; $i < $zip->numFiles; $i++) {
-            $zipFiles[] = $zip->getNameIndex($i);
-        }
-
-        // 2. Smart Clean: Delete files in targetDir not in ZIP
-        $iterator = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($targetDir, RecursiveDirectoryIterator::SKIP_DOTS),
-            RecursiveIteratorIterator::CHILD_FIRST
-        );
-
-        foreach ($iterator as $file) {
-            $relativePath = str_replace($targetDir . DIRECTORY_SEPARATOR, '', $file->getRealPath());
-            
-            // Don't delete the bridge or the zip itself
-            if ($relativePath === basename(__FILE__) || $relativePath === $zipName) continue;
-            
-            if (!in_array($relativePath, $zipFiles)) {
-                if ($file->isDir()) {
-                    @rmdir($file->getRealPath());
-                } else {
-                    @unlink($file->getRealPath());
-                }
-                $report['deleted'][] = $relativePath;
-            }
-        }
-
-        // 3. Extract All
-        $zip->extractTo($targetDir);
-        $report['extracted'] = $zip->numFiles;
-        $zip->close();
-        
-        $report['success'] = true;
-    } else {
-        throw new Exception("Failed to open ZIP file");
+    if (!file_exists($packFile)) {
+        throw new Exception("Pack file not found: $packFile");
     }
+
+    $handle = fopen($packFile, "rb");
+    fseek($handle, $pointer);
+
+    while (!feof($handle)) {
+        // Pulse: 5 seconds only to be very safe
+        if (time() - $startTime > 5) {
+            $report['next_pointer'] = ftell($handle);
+            $report['done'] = false;
+            echo json_encode($report);
+            fclose($handle);
+            exit;
+        }
+
+        $pathLenData = fread($handle, 4);
+        if (strlen($pathLenData) < 4) break;
+        
+        $pathLen = unpack("N", $pathLenData)[1];
+        $path = fread($handle, $pathLen);
+        
+        $dataLenData = fread($handle, 8);
+        if (strlen($dataLenData) < 8) break;
+        $dataLen = unpack("J", $dataLenData)[1];
+        
+        $fullPath = $targetDir . DIRECTORY_SEPARATOR . $path;
+        $parentDir = dirname($fullPath);
+        
+        if (!is_dir($parentDir)) {
+            mkdir($parentDir, 0755, true);
+        }
+
+        $outHandle = fopen($fullPath, "wb");
+        if ($outHandle) {
+            $remaining = $dataLen;
+            while ($remaining > 0) {
+                $chunkSize = min($remaining, 65536);
+                $chunk = fread($handle, $chunkSize);
+                fwrite($outHandle, $chunk);
+                $remaining -= strlen($chunk);
+                // Tiny sleep to lower IO pressure
+                usleep(5000); 
+            }
+            fclose($outHandle);
+            $report['extracted']++;
+        } else {
+            fseek($handle, $dataLen, SEEK_CUR);
+            $report['errors'][] = "Failed to write: $path";
+        }
+    }
+    
+    fclose($handle);
+    $report['done'] = true;
+    $report['success'] = true;
+    @unlink($packFile);
+    @unlink($bridgeFile);
+
 } catch (Exception $e) {
     $report['success'] = false;
     $report['errors'][] = $e->getMessage();
 }
-
-// 4. Self Destruct
-@unlink($zipName);
-@unlink(__FILE__);
 
 header('Content-Type: application/json');
 echo json_encode($report);

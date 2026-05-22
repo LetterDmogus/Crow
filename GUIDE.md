@@ -1,6 +1,6 @@
-# 📖 Panduan Memulai Crow 🐦‍⬛
+# 📖 Panduan Memulai Crow v2 🐦‍⬛
 
-Selamat datang di **Crow**! Panduan ini akan membantumu melakukan setup hingga menguasai navigasi FTP hanya dalam 5 menit.
+Selamat datang di **Crow v2**! Versi ini dirancang untuk memberikan pengalaman coding lokal namun tersinkronisasi secara instan ke server FTP melalui sistem **Virtual Workspace**.
 
 ## 1. Persiapan
 Pastikan kamu sudah menginstal Crow menggunakan perintah:
@@ -9,36 +9,46 @@ pipx install .
 ```
 
 ## 2. Inisialisasi Projek (Sangat Penting)
-Agar file kamu tetap rapi, selalu buat folder baru untuk tiap website:
+
+### Untuk Pengguna Baru:
 ```bash
 mkdir projek-saya
-cd projek-projek
+cd projek-saya
 crow init
+crow workspace init --preset laravel
 ```
-Ikuti petunjuk di layar untuk memasukkan Host FTP, Username, dan Password kamu.
 
-## 3. Masuk ke Dunia Visual (Crowmander)
-Setelah setup selesai, jalankan:
+### Untuk Pengguna v1 (Upgrade):
 ```bash
-crow browse
+cd folder-projek-v1
+crow migrate
+crow workspace init
 ```
-Kamu akan masuk ke mode **Crowmander**, layout dua panel profesional untuk produktivitas maksimal.
 
-## 4. Tips Cepat Menjelajah
-- **Bingung di mana?** Lihat Activity Log di pojok kanan bawah.
-- **Mau buka file?** Sorot file-nya, tekan `Space` untuk intip, atau tekan `e` untuk mengeditnya.
-- **Cari file cepat?** Tekan `/` lalu ketik nama file.
-- **Naik level?** Tekan `h` untuk langsung balik ke Root `/`.
+Setelah `workspace init`, Crow akan membuat folder `workspace/` yang berisi **Ghost Files** (file 0kb) yang mencerminkan struktur FTP kamu.
 
-## 5. Mengelola Banyak Sesi
-Crow bisa mengingat banyak folder kerja sekaligus!
-- Tekan `s` untuk pindah ke sidebar Sesi.
-- Gunakan panah untuk pilih sesi lain.
-- Tekan `Enter` untuk pindah folder kerja secara instan.
+## 3. Workflow Coding (The Watcher)
+Ini adalah fitur utama v2. Kamu tidak perlu lagi upload manual.
+1. Buka satu terminal, jalankan:
+   ```bash
+   crow watch start
+   ```
+2. Biarkan terminal itu menyala. Setiap kali kamu menyimpan file di dalam folder `workspace/`, Crow akan otomatis meng-upload-nya ke FTP.
+
+## 4. Mengambil Isi File (Hydration)
+Secara default, file di `workspace/` adalah 0kb. Untuk mulai mengedit, kamu perlu "menghidrasi" file tersebut:
+```bash
+# Ambil isi satu file
+crow scan path/to/file.php --get
+
+# Ambil satu folder (depth 1)
+crow scan folder/ --get
+```
+
+## 5. Tips Cepat
+- **Cek Status**: Jalankan `crow workspace status --list` untuk melihat file mana yang sudah synced atau masih skeleton.
+- **TUI Mode**: Jalankan `crow browse` untuk navigasi visual dua panel.
+- **Auto-Scan**: Atur folder yang ingin discan otomatis secara berkala di file `CROW.md`.
 
 ## 6. Integrasi dengan AI
-Jika kamu menggunakan asisten AI (seperti Gemini CLI), cukup meminta ai nya untuk menjalankan:
-```bash
-crow skill
-```
-AI akan membaca instruksi tersebut dan siap membantumu mengedit file tanpa kamu perlu mengetik perintah FTP satu per satu. Jangan lupa untuk meminta AI menjalankan `crow map --refresh` tiap kali kamu membuka session baru di folder sama.
+Berikan file `SKILL.md` kepada asisten AI kamu (Claude/Gemini). AI akan paham cara menggunakan perintah `crow scan` untuk membantumu coding langsung di dalam folder `workspace/`.
